@@ -3,7 +3,7 @@
 set -eu  # quitte sur erreur ou variable non définie
 
 echo "➤ Installation des paquets virt-v2v et python3-libguestfs…"
-sudo dnf -y install virt-v2v python3-libguestfs
+sudo dnf -y install virt-v2v python3-libguestfs unzip
 
 BASE_DIR="bases"
 
