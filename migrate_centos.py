@@ -61,7 +61,11 @@ def guest_mount(g: guestfs.GuestFS) -> None:
         raise RuntimeError(f"Impossible de gérer plusieurs racines : {roots}")
     root = roots[0]
     for mountpoint, device in sorted(g.inspect_get_mountpoints(root).items()):
-        g.mount(device, mountpoint)
+        try:
+            g.mount(device, mountpoint)
+        except RuntimeError as re:
+            logger.warning("failed to mount %s on %s: %s. ignoring ...",
+                           device, mountpoint, re)
 
 
 def run_action(g: guestfs.GuestFS, action: list[str]):
