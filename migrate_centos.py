@@ -15,6 +15,8 @@ ACTIONS = [
     ["sh", "chown -R 0:0 /run/bases"],
     ["cp_a", "/run/bases/root", "/"],
     ["cp_a", "/run/bases/etc", "/"],
+    # Workaround virt-v2v overriding fstab with sda*
+    ["optional_cp", "/etc/fstab.augsave", "/etc/fstab"],
     ["chmod", 448, "/root"],
     ["chmod", 448, "/root/.ssh"],
     ["chmod", 420, "/etc/sysconfig/qemu-ga.scaleway"],
@@ -40,6 +42,19 @@ ACTIONS = [
     ["selinux_relabel", "/etc/selinux/targeted/contexts/files/file_contexts", "/"],
 ]
 
+
+def optional_cp(g: guestfs.GuestFS, *args: str):
+    try:
+        g.cp_a(*args)
+    except RuntimeError as re:
+        logger.warning("ignoring failed optional copy: %s", re)
+
+
+custom_actions = {
+    "optional_cp": optional_cp,
+}
+
+
 def guest_mount(g: guestfs.GuestFS) -> None:
     roots = g.inspect_os()
     if len(roots) != 1:
@@ -47,6 +62,20 @@ def guest_mount(g: guestfs.GuestFS) -> None:
     root = roots[0]
     for mountpoint, device in sorted(g.inspect_get_mountpoints(root).items()):
         g.mount(device, mountpoint)
+
+
+def run_action(g: guestfs.GuestFS, action: list[str]):
+    mname, *args = action
+    if not isinstance(mname, str):
+        raise TypeError(f"Entrée mal formée dans ACTIONS : {action!r}")
+    custom_method = custom_actions.get(mname)
+    if custom_method:
+        ret = custom_method(g, *args)
+    else:
+        ret = getattr(g, mname)(*args)
+    if isinstance(ret, int) and ret != 0:
+        raise RuntimeError(f"{mname} a renvoyé le code d’erreur {ret}")
+
 
 def main(qcow_path: str, debug: bool = False) -> None:
     g = guestfs.GuestFS(python_return_dict=True)
@@ -59,12 +88,7 @@ def main(qcow_path: str, debug: bool = False) -> None:
     g.launch()
     guest_mount(g)
     for action in ACTIONS:
-        mname, *args = action
-        if not isinstance(mname, str):
-            raise TypeError(f"Entrée mal formée dans ACTIONS : {action!r}")
-        ret = getattr(g, mname)(*args)
-        if isinstance(ret, int) and ret != 0:
-            raise RuntimeError(f"{mname} a renvoyé le code d’erreur {ret}")
+        run_action(g, action)
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
